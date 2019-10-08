@@ -10,6 +10,7 @@
 #include "extent_client.h"
 #include <vector>
 
+#define FILENAME_LENGTH 64
 
 class yfs_client {
   extent_client *ec;
@@ -40,11 +41,26 @@ class yfs_client {
   static std::string filename(inum);
   static inum n2i(std::string);
 
+  struct directory_entry {
+    char dirname[FILENAME_LENGTH];
+    yfs_client::inum inum;
+  };
+
+  struct directory {
+    unsigned int cnt; // min = 2
+    struct directory_entry entries[0]; // placeholder for directory entries
+  };
+
+  void addsubfile(yfs_client::directory *dir, const std::string filename, const inum ino);
+  void removesubfile(yfs_client::directory *dir, const std::string filename);
+  int addFile(inum, const char*, extent_protocol::types, inum &);
+  
  public:
   yfs_client(std::string, std::string);
 
   bool isfile(inum);
   bool isdir(inum);
+  bool issymlink(inum);
 
   int getfile(inum, fileinfo &);
   int getdir(inum, dirinfo &);
@@ -59,6 +75,8 @@ class yfs_client {
   int mkdir(inum , const char *, mode_t , inum &);
   
   /** you may need to add symbolic link related methods here.*/
+  int ln(inum, const char* name, const char *link, inum &);
+  int readlink(inum, std::string &);
 };
 
 #endif 
