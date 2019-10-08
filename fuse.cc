@@ -307,8 +307,8 @@ fuseserver_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     e.generation = 0;
     bool found = false;
 
-     yfs_client::inum ino;
-     yfs->lookup(parent, name, found, ino);
+    yfs_client::inum ino;
+    yfs->lookup(parent, name, found, ino);
 
     if (found) {
         e.ino = ino;
@@ -477,13 +477,13 @@ fuseserver_createsymlink(fuse_req_t req, const char *link, fuse_ino_t parent,
     e.attr_timeout = 0.0;
     e.entry_timeout = 0.0;
     e.generation = 0;
-    bool found = false;
 
     yfs_client::inum ino;
 
     int r;
     if((r = yfs->ln(parent, name, link, ino) == extent_protocol::OK)) {
         e.ino = ino;
+        getattr(ino, e.attr);
         fuse_reply_entry(req, &e);
     } else {
         fuse_reply_err(req, EEXIST);

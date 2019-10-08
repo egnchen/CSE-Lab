@@ -342,7 +342,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     } else
         bytes_written = size;
     
-    strncpy((char *)(buf.data() + off), data, size);
+    memcpy((void *)(buf.data() + off), (void *)data, size);
     EXT_RPC(ec->put(ino, buf));
     return OK;
 }
@@ -378,8 +378,6 @@ int yfs_client::ln(inum parent, const char *name, const char *link, inum &ino)
     /*
      * create symbolic link
      */
-    bool found = false;
-
     printf("Creating symlink '%s' to '%s'\n", name, link);
 
     int ret = addFile(parent, name, extent_protocol::T_SYMLINK, ino);
