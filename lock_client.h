@@ -6,12 +6,13 @@
 #include <string>
 #include "lock_protocol.h"
 #include "rpc.h"
-#include <vector>
+#include <set>
 
 // Client interface to the lock server
 class lock_client {
  protected:
   rpcc *cl;
+  std::map<lock_protocol::lockid_t, int> acquired;
  public:
   lock_client(std::string d);
   virtual ~lock_client() {};

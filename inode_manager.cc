@@ -38,20 +38,22 @@ block_manager::alloc_block()
    * note: you should mark the corresponding bit in block bitmap when alloc.
    * you need to think about which block you can start to be allocated.
    */
-  blockid_t blkid = IBLOCK(sb.ninodes, sb.nblocks) + 1;
+  // set the starting point of data blocks
   char buf[BLOCK_SIZE];
-  do {
-    read_block(BBLOCK(blkid), buf);
-    for(; blkid % BPB != 0; ++blkid) {
-      if((buf[blkid / 8] & (1 << (blkid & 0x7))) == 0) {
+  for(int blkid_s = IBLOCK(sb.ninodes, sb.nblocks) + 1;
+    blkid_s < sb.nblocks; blkid_s = (blkid_s + BPB) / BPB * BPB) {
+    read_block(BBLOCK(blkid_s), buf);
+    for(int blkid = blkid_s; blkid < (blkid_s + BPB) / BPB * BPB; ++blkid) {
+      if((buf[(blkid % BPB) / 8] & (1 << (blkid & 0x7))) == 0) {
         // allocate this block
-        buf[blkid / 8] |= 1 << (blkid & 0x7);
+        buf[(blkid % BPB) / 8] |= 1 << (blkid & 0x7);
         write_block(BBLOCK(blkid), buf);
         printf("\tbm: allocated block %d\n", blkid);
         return blkid;
       }
     }
-  } while(blkid < sb.nblocks);
+  }
+  puts("\tbm: failed to allocate block");
   return -1;
 }
 
@@ -139,7 +141,7 @@ inode_manager::free_inode(uint32_t inum)
    */
   printf("\tim: freeing inode %d\n", inum);
   inode_t *node = get_inode(inum);
-  if(node != nullptr) {
+  if(node != NULL) {
     node->type = 0;
     put_inode(inum, node);
     free(node);

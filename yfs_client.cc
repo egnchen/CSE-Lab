@@ -1,6 +1,5 @@
 // yfs client.  implements FS operations using extent and lock server
 #include "yfs_client.h"
-#include "extent_client.h"
 #include <sstream>
 #include <iostream>
 #include <stdio.h>
@@ -8,57 +7,47 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <cstdlib>
 
 yfs_client::yfs_client(std::string extend_dst, std::string lock_dst)
 {
     ec = new extent_client(extend_dst);
+    lc = new lock_client(lock_dst);
+    
+    // init root dir
     std::string buf;
     buf.resize(sizeof(directory) + 2 * sizeof(directory_entry));
     directory *rootdir = (directory *)(buf.data());
-    lc = new lock_client(lock_dst);
-    // init root dir
     addsubfile(rootdir, ".", 1);
     addsubfile(rootdir, "..", 1);
     rootdir->cnt = 2;
     if (ec->put(1, buf) != extent_protocol::OK)
         printf("error init root dir\n"); // XYB: init root dir
-
 }
 
 yfs_client::inum
 yfs_client::n2i(std::string n)
 {
+    // c++11 feature
     return std::stoull(n);
-    // original implementation:
-    /*
-    std::istringstream ist(n);
-    unsigned long long finum;
-    ist >> finum;
-    return finum;
-    */
 }
 
 std::string
 yfs_client::filename(inum inum)
 {
+    // c++11 feature
     return std::to_string(inum);
-    // original implementation
-    /*
-    std::ostringstream ost;
-    ost << inum;
-    return ost.str();
-    */
 }
 
-#define EXT_RPC_BOOL(xx) do { \
-    if ((xx) != extent_protocol::OK) { \
+#define EXT_RPC_BOOL(_xx) do { \
+    if ((_xx) != extent_protocol::OK) { \
         printf("EXT_RPC Error: %s:%d \n", __FILE__, __LINE__); \
         return false; \
     } \
 } while (0)
 
-#define EXT_RPC(xx) do { \
-    if ((xx) != extent_protocol::OK) { \
+#define EXT_RPC(_xx) do { \
+    if ((_xx) != extent_protocol::OK) { \
         printf("EXT_RPC Error: %s:%d \n", __FILE__, __LINE__); \
         return IOERR; \
     } \
@@ -69,7 +58,7 @@ yfs_client::isfile(inum inum)
 {
     extent_protocol::attr a;
     EXT_RPC_BOOL(ec->getattr(inum, a));
-
+    
     if (a.type == extent_protocol::T_FILE) {
         printf("isfile: %08lld is a file\n", inum);
         return true;
@@ -82,7 +71,6 @@ yfs_client::isfile(inum inum)
 /** Your code here for Lab...
  * You may need to add routines such as
  * readlink, issymlink here to implement symbolic link.
- * 
  * */
 
 bool
@@ -90,7 +78,6 @@ yfs_client::isdir(inum inum)
 {
     extent_protocol::attr a;
     EXT_RPC_BOOL(ec->getattr(inum, a));
-
     return a.type == extent_protocol::T_DIR;
 }
 
@@ -100,18 +87,17 @@ yfs_client::issymlink(inum inum)
 {
     extent_protocol::attr a;
     EXT_RPC_BOOL(ec->getattr(inum, a));
-
     return a.type == extent_protocol::T_SYMLINK;
 }
-
-
 
 int
 yfs_client::getfile(inum inum, fileinfo &fin)
 {
     printf("getfile %08llx\n", inum);
     extent_protocol::attr a;
+    lc->acquire(inum);
     EXT_RPC(ec->getattr(inum, a));
+    lc->release(inum);
 
     fin.atime = a.atime;
     fin.mtime = a.mtime;
@@ -125,8 +111,10 @@ int
 yfs_client::getdir(inum inum, dirinfo &din)
 {
     printf("getdir %08llx\n", inum);
+    lc->acquire(inum);
     extent_protocol::attr a;
     EXT_RPC(ec->getattr(inum, a));
+    lc->release(inum);
     din.atime = a.atime;
     din.mtime = a.mtime;
     din.ctime = a.ctime;
@@ -144,6 +132,8 @@ yfs_client::setattr(inum ino, size_t size)
      * according to the size (<, =, or >) content length.
      */
     printf("setattr %08llx\n", ino);
+    lc->acquire(ino);
+
     extent_protocol::attr a;
     EXT_RPC(ec->getattr(ino, a));
 
@@ -154,6 +144,7 @@ yfs_client::setattr(inum ino, size_t size)
         buf.resize(size);
         EXT_RPC(ec->put(ino, buf));
     }
+    lc->release(ino);
 
     return OK;
 }
@@ -189,28 +180,31 @@ yfs_client::removesubfile(yfs_client::directory *dir, const std::string filename
 int
 yfs_client::addFile(inum parent, const char *name, extent_protocol::types type, inum &ino_out)
 {
-    printf("create file under %08llx\n", parent);
+    printf("create file under ino[%08llx]\n", parent);
     std::string buf;
     extent_protocol::extentid_t id;
 
+    lc->acquire(parent);
     // look it up first
     bool found = false;
     lookup(parent, name, found, ino_out);
-    if(found) {
-        printf("file found, abort creation.\n");
+    if(found == true) {
+        puts("Creation failed: file already exist.");
+        lc->release(parent);
         return EXIST;
     }
-    
-    // create it
-    printf("file not found, creating it.\n");
+
+    // create it right away
     EXT_RPC(ec->create(type, id));
     // add entry to parent directory
-    printf("adding entry to parent directory\n");
     EXT_RPC(ec->get(parent, buf));
     buf.resize(buf.length() + sizeof(directory_entry));
     addsubfile((directory *)(buf.data()), name, id);
-    printf("writing back\n");
     EXT_RPC(ec->put(parent, buf));
+
+   
+    lc->release(parent);
+    puts("lock released");
     // return them
     ino_out = id;
     return OK;
@@ -232,17 +226,22 @@ int
 yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
 {
     int ret = addFile(parent, name, extent_protocol::T_DIR, ino_out);
-    if(ret != OK)
+    if(ret != OK) {
         return ret;
-    
+    }
+        
     puts("mkdir: writing directory.");
+    // create content in memory
     std::string buf;
     directory *dir;
     buf.resize(sizeof(directory));
     dir = (directory *)(buf.data());
     dir->cnt = 0;
+    // write it to disk
+
+    lc->acquire(ino_out);
     EXT_RPC(ec->put(ino_out, buf));
-    puts("mkdir: completed");
+    lc->release(ino_out);
 
     return OK;
 }
@@ -255,26 +254,28 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
      * note: lookup file from parent dir according to name;
      * you should design the format of directory content.
      */
-    printf("looking up file '%s' under %08llx\n", name, parent);
-    
     std::string buf;
     const directory *dir;
     found = false;
-
-    if(!isdir(parent))
+    printf("looking up file %s under parent %llu\n", name, parent);
+    lc->acquire(parent);
+    if(!isdir(parent)) {
+        lc->release(parent);
         return NOENT;
-    
+    }
     EXT_RPC(ec->get(parent, buf));
+    lc->release(parent);
     dir = (const directory *)buf.c_str();
     // first two are . and ..
+    printf("%d entries total\n", dir->cnt);
     for(unsigned int i = 0; i < dir->cnt; i++) {
+        printf("visiting buf @ %d\n", i);
         if(strcmp(name, dir->entries[i].dirname) == 0) {
             found = true;
             ino_out = dir->entries[i].inum;
             break;
         }
     }
-    
     return found ? EXIST : NOENT;
 }
 
@@ -286,17 +287,24 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
      * note: you should parse the dirctory content using your defined format,
      * and push the dirents to the list.
      */
-    extent_protocol::attr a;
     std::string buf;
     const directory *dirp;
 
-    EXT_RPC(ec->getattr(dir, a));
-    if(a.type != extent_protocol::T_DIR)
+    lc->acquire(dir);
+    // check if the inode is a directory
+    if(!isdir(dir)) {
+        lc->release(dir);
         return NOENT;
+    }
     
+    // read directory content
     list.clear();
     EXT_RPC(ec->get(dir, buf));
+    lc->release(dir);
+
+    // translate binary content and output
     dirp = (const directory *)(buf.c_str());
+    printf("Reading dir, cnt = %d\n", dirp->cnt);
     for(unsigned int i = 0; i < dirp->cnt; i++) {
         dirent ent;
         ent.name = dirp->entries[i].dirname;
@@ -314,7 +322,9 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
      * note: read using ec->get().
      */
     std::string buf;
+    lc->acquire(ino);
     EXT_RPC(ec->get(ino, buf));
+    lc->release(ino);
     if(off + size > buf.length())
         data = buf.substr(off);
     else
@@ -333,15 +343,19 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
      */
     std::string buf;
     bytes_written = 0;
+    
+    lc->acquire(ino);
     EXT_RPC(ec->get(ino, buf));
     if(size + off > buf.size()) {
         bytes_written = off + size - buf.size();
         buf.resize(off + size, '\0');
-    } else
+    } else {
         bytes_written = size;
-    
+    }
     memcpy((void *)(buf.data() + off), (void *)data, size);
     EXT_RPC(ec->put(ino, buf));
+    lc->release(ino);
+    
     return OK;
 }
 
@@ -355,9 +369,12 @@ int yfs_client::unlink(inum parent, const char *name)
     bool found;
     inum ino;
     printf("unlinking %s from parent %08lld\n", name, parent);
+    lc->acquire(parent);
     int ret = lookup(parent, name, found, ino);
-    if(ret != EXIST)
+    if(ret != EXIST) {
+        lc->release(parent);
         return ret;
+    }
     
     // remove entry in parent
     puts("lookup complete, try to unlink.");
@@ -368,6 +385,7 @@ int yfs_client::unlink(inum parent, const char *name)
     buf.resize(buf.length() - sizeof(directory_entry));
     EXT_RPC(ec->put(parent, buf));
     EXT_RPC(ec->remove(ino));
+    lc->release(parent);
     return OK;
 }
 
@@ -384,7 +402,9 @@ int yfs_client::ln(inum parent, const char *name, const char *link, inum &ino)
     
     puts("Writing symlink content");
     std::string buf(link);
+    lc->acquire(ino);
     EXT_RPC(ec->put(ino, buf));
+    lc->release(ino);
     return OK;
 }
 
@@ -397,6 +417,8 @@ int yfs_client::readlink(inum ino, std::string &buf) {
     if(!issymlink(ino))
         return IOERR;
     
+    lc->acquire(ino);
     EXT_RPC(ec->get(ino, buf));
+    lc->release(ino);
     return OK;
 }

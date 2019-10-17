@@ -22,11 +22,11 @@ class extent_server {
  public:
   extent_server();
 
-  int create(uint32_t type, extent_protocol::extentid_t &id);
-  int put(extent_protocol::extentid_t id, std::string, int &);
-  int get(extent_protocol::extentid_t id, std::string &);
-  int getattr(extent_protocol::extentid_t id, extent_protocol::attr &);
-  int remove(extent_protocol::extentid_t id, int &);
+  extent_protocol::status create  (uint32_t type, extent_protocol::extentid_t &id);
+  extent_protocol::status put     (extent_protocol::extentid_t id, const std::string buf, int &ret);
+  extent_protocol::status get     (extent_protocol::extentid_t id, std::string &buf);
+  extent_protocol::status getattr (extent_protocol::extentid_t id, extent_protocol::attr &attr);
+  extent_protocol::status remove  (extent_protocol::extentid_t id, int &ret);
 };
 
 #endif 

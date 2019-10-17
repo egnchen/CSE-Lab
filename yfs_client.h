@@ -9,12 +9,14 @@
 //#include "yfs_protocol.h"
 #include "extent_client.h"
 #include <vector>
+#include <mutex>
 
 #define FILENAME_LENGTH 64
 
 class yfs_client {
   extent_client *ec;
   lock_client *lc;
+  std::mutex g_mutex;
  public:
 
   typedef unsigned long long inum;

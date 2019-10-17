@@ -1,7 +1,9 @@
-// extent wire protocol
-
+/*
+ * extent wire protocol
+ */
 #ifndef extent_protocol_h
 #define extent_protocol_h
+
 
 #include "rpc.h"
 
@@ -9,7 +11,9 @@ class extent_protocol {
  public:
   typedef int status;
   typedef unsigned long long extentid_t;
-  enum xxstatus { OK, RPCERR, NOENT, IOERR };
+  enum xxstatus { 
+    OK = 0,
+    RPCERR, NOENT, IOERR };
   enum rpc_numbers {
     put = 0x6001,
     get,

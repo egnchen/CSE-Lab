@@ -1,5 +1,3 @@
-// RPC stubs for clients to talk to extent_server
-
 #include "extent_client.h"
 #include <sstream>
 #include <iostream>
@@ -7,56 +5,76 @@
 #include <unistd.h>
 #include <time.h>
 
-extent_client::extent_client(std::string dst)
+// RPC stubs for clients to talk to extent_server
+
+extent_client::extent_client(std::string servdst)
 {
+  // connect with lock server
+  // connect with rpc server
   sockaddr_in dstsock;
-  make_sockaddr(dst.c_str(), &dstsock);
+  make_sockaddr(servdst.c_str(), &dstsock);
   cl = new rpcc(dstsock);
   if (cl->bind() != 0) {
-    printf("extent_client: bind failed\n");
+    puts("extent_client: bind failed");
+  } else {
+    puts("extent_client: bind successful");
   }
 }
 
 // a demo to show how to use RPC
-extent_protocol::status
-extent_client::create(uint32_t type, extent_protocol::extentid_t &id)
+extent_protocol::status extent_client::create(
+  const uint32_t type, 
+  extent_protocol::extentid_t &eid)
 {
-  extent_protocol::status ret = extent_protocol::OK;
   // Your lab2 part1 code goes here
-  return ret;
+  puts("extent client: calling create");
+  int ret = cl->call(extent_protocol::create, type, eid);
+  assert(ret == extent_protocol::OK);
+  return extent_protocol::OK;
 }
 
-extent_protocol::status
-extent_client::get(extent_protocol::extentid_t eid, std::string &buf)
+extent_protocol::status extent_client::get(
+  const extent_protocol::extentid_t eid,
+  std::string &buf)
 {
-  extent_protocol::status ret = extent_protocol::OK;
   // Your lab2 part1 code goes here
-  return ret;
+  puts("extent client: calling get");
+  int ret = cl->call(extent_protocol::get, eid, buf);
+  assert(ret == extent_protocol::OK);
+  return extent_protocol::OK;
 }
 
-extent_protocol::status
-extent_client::getattr(extent_protocol::extentid_t eid, 
-		       extent_protocol::attr &attr)
+extent_protocol::status extent_client::getattr(
+  const extent_protocol::extentid_t eid, 
+	extent_protocol::attr &attr)
 {
-  extent_protocol::status ret = extent_protocol::OK;
-  ret = cl->call(extent_protocol::getattr, eid, attr);
-  return ret;
+  puts("extent client: calling getattr");
+  int ret = cl->call(extent_protocol::getattr, eid, attr);
+  assert(ret == extent_protocol::OK);
+  return extent_protocol::OK;
 }
 
-extent_protocol::status
-extent_client::put(extent_protocol::extentid_t eid, std::string buf)
+extent_protocol::status extent_client::put(
+  const extent_protocol::extentid_t eid,
+  const std::string &buf)
 {
-  extent_protocol::status ret = extent_protocol::OK;
   // Your lab2 part1 code goes here
-  return ret;
+  puts("extent client: calling put");
+  int r;
+  int ret = cl->call(extent_protocol::put, eid, buf, r);
+  assert(ret == extent_protocol::OK);
+  return r;
 }
 
-extent_protocol::status
-extent_client::remove(extent_protocol::extentid_t eid)
+extent_protocol::status extent_client::remove(
+  const extent_protocol::extentid_t eid)
 {
-  extent_protocol::status ret = extent_protocol::OK;
   // Your lab2 part1 code goes here
-  return ret;
+  puts("extent client: calling remove");
+  int r;
+  int ret = cl->call(extent_protocol::remove, eid, r);
+  assert(ret == extent_protocol::OK);
+  return r;
 }
 
 

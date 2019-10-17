@@ -3,7 +3,7 @@
 #ifndef lock_protocol_h
 #define lock_protocol_h
 
-#include "rpc.h"
+#include "rpc/rpc.h"
 
 class lock_protocol {
  public:

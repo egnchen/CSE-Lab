@@ -1,5 +1,4 @@
 // demo client
-
 #include <string>
 #include "demo_protocol.h"
 #include "rpc.h"
@@ -37,14 +36,6 @@ demo_client::stat(demo_protocol::demoVar var)
   VERIFY (ret == demo_protocol::OK);
   return r;
 }
-
-
-#include "demo_protocol.h"
-#include "rpc.h"
-#include <arpa/inet.h>
-#include <vector>
-#include <stdlib.h>
-#include <stdio.h>
 
 std::string dst;
 demo_client *dc;
