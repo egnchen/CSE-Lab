@@ -30,7 +30,7 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
   cltputs("lock acquired, begin acquire");
   if(lock.holder == nullptr) {
     // no one is holding the lock
-    cltputs("no one is holding lock, give directly");
+    cltputs("no one is holding lock or pending, give directly");
     lock.holder = clt;
   } else {
     if(lock.holder == clt) {
@@ -47,24 +47,21 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
           // revoked, grant it now
           cltputs("revokation successful.");
           lock.m->lock();
-          lock.holder = nullptr;
+          // grant it to n directly
           rpcc *n = lock.waiting.front();
-          // don't delete the first entry
+          lock.holder = n;
           lock.waiting.pop();
-          lock.m->unlock();
           // send retry now
-          cltputs("sending retry...");
-          n->call(rlock_protocol::retry, lid, ret2);
-          ret = lock_protocol::RETRY;
-          return ret;
+          // cltputs("sending retry...");
+          // n->call(rlock_protocol::retry, lid, ret2);
         } else if(ret2 == rlock_protocol::WAIT) {
-          // wait until released, so send back a retry
+          // wait until released, so send back RETRY
           cltputs("client says wait, so tell current client RETRY");
           ret = lock_protocol::RETRY;
           return ret;
         }
       } else {
-        // send back a retry
+        // send back RETRY
         cltputs("many waiting, sending RETRY");
         ret = lock_protocol::RETRY;
       }
@@ -87,16 +84,18 @@ lock_server_cache::release(lock_protocol::lockid_t lid, std::string id,
   if(lock.holder != clt) {
     cltputs("error: lock not claimed by client");
     ret = lock_protocol::RPCERR;
-    lock.m->unlock();
   } else {
     // release the lock
-    rpcc *nclt = lock.waiting.front();
     lock.holder = nullptr;
-    lock.waiting.pop();
-    lock.m->unlock();
-    cltprintf("sending retry to %u\n", nclt->id());
-    nclt->call(rlock_protocol::retry, lid, ret2);
+    if(!lock.waiting.empty()) {
+      rpcc *nclt = lock.waiting.front();
+      lock.holder = nclt;
+      lock.waiting.pop();
+      cltprintf("sending retry to %u\n", nclt->id());
+      nclt->call(rlock_protocol::retry, lid, ret2);
+    }
   }
+  lock.m->unlock();
   return ret;
 }
 

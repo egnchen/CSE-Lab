@@ -75,7 +75,6 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
           state.s = LOCKED;
           state.acquire_cnt = 1;
           state.thread_id = thread_id;
-          state.revoke = false;
         } else if (ret == lock_protocol::RETRY) {
           // have to wait for retry
           // keep waiting until retry bit is set
@@ -84,9 +83,9 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
           while(!state.retry)
             state.retry_cv->wait_for(glock, millsecs(10));
           cltputs("retry received");
-          state.retry = false;  // received, so turn it off
-          // reenter the procedure once more
-          flag = true;
+          // grant the lock
+          state.retry = false;  // turn off this bit
+          flag = true;          // reenter the switch
         }
         break;
       case FREE:
@@ -165,12 +164,14 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
               state.s = NONE;
               state.acquire_cnt = 0;
               state.thread_id = 0;
+              state.revoke = false;
+              state.retry = false;
             } else cltputs("Error: not acquired by myself.");
           } else {
             // simply free it
             cltputs("lock cached.\n");
-          }
             state.s = FREE;
+          }
           // notify all friends to come
           state.release_cv->notify_all();
         } else cltputs("recursive release");
@@ -203,7 +204,7 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
       // revoke it right away
       cltputs("FREE/RELEASING: modify it right away and send OK");
       state.revoke = false;
-      state.retry = false;
+      // state.retry = false;
       state.acquire_cnt = 0;
       state.thread_id = 0;
       state.s = NONE;
@@ -231,9 +232,18 @@ lock_client_cache::retry_handler(lock_protocol::lockid_t lid,
   int ret = rlock_protocol::OK;
   lock_state &state = lock_cache[lid];
 
-  cltputs("retry received, notifying others...");
+  cltputs("retry received, acquiring lock & notifying others...");
+  // set retry bit here
+  // in case retry rpc arrive before cond variable wait started
   state.retry = true;
-  lock_cache[lid].retry_cv->notify_all();
+  if(state.s != NONE) {
+    cltputs("warning: retry on an already cached lock.");
+  } else {
+    state.s = FREE;
+    state.acquire_cnt = 0;
+    state.thread_id = 0;
+  }
+  state.retry_cv->notify_all();
   return ret;
 }
 
