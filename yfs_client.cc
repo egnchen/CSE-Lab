@@ -12,7 +12,7 @@
 yfs_client::yfs_client(std::string extend_dst, std::string lock_dst)
 {
     ec = new extent_client(extend_dst);
-    lc = new lock_client(lock_dst);
+    lc = new lock_client_cache(lock_dst);
     
     // init root dir
     std::string buf;
@@ -269,7 +269,6 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
     // first two are . and ..
     printf("%d entries total\n", dir->cnt);
     for(unsigned int i = 0; i < dir->cnt; i++) {
-        printf("visiting buf @ %d\n", i);
         if(strcmp(name, dir->entries[i].dirname) == 0) {
             found = true;
             ino_out = dir->entries[i].inum;

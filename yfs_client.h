@@ -4,7 +4,8 @@
 #include <string>
 
 #include "lock_protocol.h"
-#include "lock_client.h"
+// #include "lock_client.h"
+#include "lock_client_cache.h"
 
 //#include "yfs_protocol.h"
 #include "extent_client.h"

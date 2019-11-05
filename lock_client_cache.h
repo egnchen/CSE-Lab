@@ -5,10 +5,14 @@
 #define lock_client_cache_h
 
 #include <string>
+#include <map>
+#include <mutex>
+#include <condition_variable>
 #include "lock_protocol.h"
 #include "rpc.h"
 #include "lock_client.h"
 #include "lang/verify.h"
+#include "tprintf.h"
 
 
 // Classes that inherit lock_release_user can override dorelease so that 
@@ -21,12 +25,45 @@ class lock_release_user {
 };
 
 class lock_client_cache : public lock_client {
- private:
+public:
+  enum state {
+    NONE = 0,
+    FREE,
+    LOCKED,
+    ACQUIRING,
+    RELEASING
+  };
+
+struct lock_state {
+    state s;
+    bool revoke, retry;
+    pthread_t thread_id;
+    unsigned int acquire_cnt;
+    std::condition_variable * release_cv, * retry_cv;
+    lock_state():
+      s(NONE), revoke(false), retry(false), thread_id(0), acquire_cnt(0),
+      release_cv(new std::condition_variable()),
+      retry_cv(new std::condition_variable()) {}
+    lock_state(lock_state &&rr):
+      s(rr.s), revoke(rr.revoke), retry(rr.retry), thread_id(rr.thread_id),
+      acquire_cnt(rr.acquire_cnt), release_cv(rr.release_cv), retry_cv(rr.retry_cv) {
+        rr.retry_cv = rr.release_cv = nullptr;
+      }
+    ~lock_state() {
+      delete retry_cv;
+      delete release_cv;
+    }
+  };
+
+private:
+  static std::map<lock_protocol::lockid_t, lock_state> lock_cache;
+  static std::mutex global_lock;
   class lock_release_user *lu;
   int rlock_port;
   std::string hostname;
   std::string id;
- public:
+
+public:
   static int last_port;
   lock_client_cache(std::string xdst, class lock_release_user *l = 0);
   virtual ~lock_client_cache() {};
