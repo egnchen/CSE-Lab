@@ -42,7 +42,7 @@ lock_client_cache::lock_client_cache(std::string xdst,
   if(cl->bind() < 0) {
     tprintf("[cid=%s]\tbind failed", id.c_str());
   }
-  else tprintf("[cid=%s]\tbind successful\n", id.c_str());
+  else tprintf("[id=%s %d]\tbind successful\n", id.c_str(), cl->id());
 }
 
 // will return true no matter what
@@ -55,8 +55,8 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
   int r = true, r2;
   lock_state &state = lock_cache[lid];
   bool flag;
+  glock.lock();
   do {
-    glock.lock();
     cltputs("::acquire entered switch");
     flag = false;
     switch(state.s) {
@@ -79,9 +79,10 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
         } else if (ret == lock_protocol::RETRY) {
           // have to wait for retry
           // keep waiting until retry bit is set
+          state.s = NONE;
           cltputs("acquire rpc failed, waiting for retry...");
-          do state.retry_cv->wait_for(glock, millsecs(150));
-          while(!state.retry);
+          while(!state.retry)
+            state.retry_cv->wait_for(glock, millsecs(10));
           cltputs("retry received");
           state.retry = false;  // received, so turn it off
           // reenter the procedure once more
@@ -100,8 +101,8 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
         if(state.thread_id != thread_id) {
           // not me, cond wait until released
           cltputs("LOCKED/ACQUIRING: waiting for release");
-          state.release_cv->wait(glock);
           flag = true;  // reenter the procedure
+          state.release_cv->wait(glock);
         } else {
           if(state.s == LOCKED) {
             // reacquired by same thread, just add
@@ -120,8 +121,8 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
         break;
       default: break;
     }
-    glock.unlock();
   } while(flag);
+  glock.unlock();
   return r;
 }
 
@@ -164,13 +165,15 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
               state.s = NONE;
               state.acquire_cnt = 0;
               state.thread_id = 0;
-            } else cltputs("Erorr: not acquired by myself.");
-          } else
+            } else cltputs("Error: not acquired by myself.");
+          } else {
             // simply free it
+            cltputs("lock cached.\n");
+          }
             state.s = FREE;
           // notify all friends to come
           state.release_cv->notify_all();
-        }
+        } else cltputs("recursive release");
       } else
         cltprintf("warning: trying to release a lock that doesn't belong to itself.");
       break;
@@ -188,6 +191,7 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
   int ret = rlock_protocol::OK;
   lock_state &state = lock_cache[lid];
   glock.lock();
+  // set revoke to true first
   state.revoke = true;
   switch(state.s) {
     case NONE:
@@ -199,6 +203,7 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
       // revoke it right away
       cltputs("FREE/RELEASING: modify it right away and send OK");
       state.revoke = false;
+      state.retry = false;
       state.acquire_cnt = 0;
       state.thread_id = 0;
       state.s = NONE;
@@ -207,10 +212,12 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
     case LOCKED:
     case ACQUIRING:
       // cond wait for release...
-      // set revoke bit first
+      // revoke bit already set
       cltputs("LOCKED/ACQUIRING: return RETRY and send release later")
       // tell server to hold until a release rpc is sent
       ret = rlock_protocol::WAIT;
+      break;
+    default: break;
   }
   glock.unlock();
   return ret;

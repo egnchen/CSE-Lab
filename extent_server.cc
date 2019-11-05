@@ -28,7 +28,7 @@ int extent_server::create(uint32_t type, extent_protocol::extentid_t &id)
  */
 int extent_server::put(extent_protocol::extentid_t id, const std::string buf, int &ret)
 {
-  printf("extent_server: put %llu, size=%u\n", id, buf.size());
+  printf("extent_server: put %llu, size=%lu\n", id, buf.size());
   id &= 0x7ffffffff;
   im->write_file(id, buf.c_str(), buf.size());
   ret = extent_protocol::OK;

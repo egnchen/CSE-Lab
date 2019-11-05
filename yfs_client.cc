@@ -267,7 +267,6 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
     lc->release(parent);
     dir = (const directory *)buf.c_str();
     // first two are . and ..
-    printf("%d entries total\n", dir->cnt);
     for(unsigned int i = 0; i < dir->cnt; i++) {
         if(strcmp(name, dir->entries[i].dirname) == 0) {
             found = true;

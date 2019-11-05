@@ -22,8 +22,10 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
                                int &)
 {
   lock_protocol::status ret = lock_protocol::OK, ret2;
+  int r;
   lock_data &lock = locks[lid];
   rpcc *clt = handle(id).safebind();
+  cltputs("::acquire: trying to get lock");
   lock.m->lock();
   cltputs("lock acquired, begin acquire");
   if(lock.holder == nullptr) {
@@ -39,23 +41,27 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
       if(is_empty) {
         // sends a revoke
         lock.m->unlock();
-        cltputs("revoking...");
-        lock.waiting.front()->call(rlock_protocol::revoke, lid, ret2);
+        cltprintf("revoking from %u\n", lock.holder->id());
+        ret2 = lock.holder->call(rlock_protocol::revoke, lid, r);
         if(ret2 == rlock_protocol::OK) {
           // revoked, grant it now
           cltputs("revokation successful.");
-          rpcc *n = lock.waiting.front();
           lock.m->lock();
           lock.holder = nullptr;
+          rpcc *n = lock.waiting.front();
+          // don't delete the first entry
           lock.waiting.pop();
           lock.m->unlock();
           // send retry now
           cltputs("sending retry...");
           n->call(rlock_protocol::retry, lid, ret2);
+          ret = lock_protocol::RETRY;
+          return ret;
         } else if(ret2 == rlock_protocol::WAIT) {
           // wait until released, so send back a retry
           cltputs("client says wait, so tell current client RETRY");
           ret = lock_protocol::RETRY;
+          return ret;
         }
       } else {
         // send back a retry
@@ -64,6 +70,7 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
       }
     }    
   }
+  lock.m->unlock();
   return ret;
 }
 
@@ -87,6 +94,7 @@ lock_server_cache::release(lock_protocol::lockid_t lid, std::string id,
     lock.holder = nullptr;
     lock.waiting.pop();
     lock.m->unlock();
+    cltprintf("sending retry to %u\n", nclt->id());
     nclt->call(rlock_protocol::retry, lid, ret2);
   }
   return ret;
