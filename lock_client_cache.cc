@@ -58,10 +58,27 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
     glock.lock();
     flag = false;
     switch(state.s) {
+      case ACQUIRING:
+        if(state.thread_id == 0)
+          // should resend acquire rpc
+          goto case_none;
+        else {
+          // this cannot happen
+          assert(state.thread_id != pthread_self());
+          // it is already being acquired
+          // but rpc haven't returned yet,
+          // so just wait
+          goto case_locked;
+        }
+        break;
       case NONE:
+      case_none:
         cltputs("NONE: trying to acquire lock");
         // acquire the lock from server
         // reenter the switch after state change
+        state.acquire_cnt = 0;
+        state.retry = state.revoke = false;
+        state.thread_id = 0;
         do {
           state.s = ACQUIRING;
           glock.unlock();
@@ -78,16 +95,18 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
           } else if (ret == lock_protocol::RETRY) {
             // have to wait for retry
             // keep waiting until retry bit is set
-            state.s = NONE;
+            // state.s = NONE;
             cltputs("acquire rpc failed, waiting for retry...");
             while(!state.retry)
-              state.retry_cv->wait_for(glock, millsecs(10));
+              state.retry_cv->wait_for(glock, millsecs(20));
             cltputs("retry received");
+            assert(state.s == FREE);
             // grant the lock
             state.retry = false;  // turn off this bit
             flag = true;          // reenter the switch
           } else if (ret == lock_protocol::RPCERR) {
-            cltputs("Warning: remote not ready yet, retry directly."); 
+            cltputs("Warning: remote tells that lock is already acquired.");
+
           }
         } while (ret == lock_protocol::RPCERR);
         break;
@@ -99,7 +118,7 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
         state.thread_id = thread_id;
         break;
       case LOCKED:
-      case ACQUIRING:
+      case_locked:
         if(state.thread_id != thread_id) {
           // not me, cond wait until released
           cltputs("LOCKED/ACQUIRING: waiting for release");
@@ -159,8 +178,6 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
             state.thread_id = 0;
             state.revoke = false;
             state.retry = false;
-            // turn it off
-            state.revoke = false;
             // do release handler
             if(lru) lru->dorelease(lid);
             // send rpc now
@@ -169,8 +186,13 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
             ret = cl->call(lock_protocol::release, lid, id, r2);
             glock.lock();
             cltputs("release rpc returned");
-            assert(ret == lock_protocol::OK);
-            state.s = NONE;
+            if(ret == rlock_protocol::RPCERR) {
+              // remote says this lock doesn't belong to you
+              // cache inconsistency, release it anyway...
+              cltputs("warning: remote says lock doesn't belong to oneself.");
+            }
+            if(state.s == RELEASING)
+              state.s = NONE;
           } else {
             // simply free it
             cltputs("lock cached.");
@@ -203,7 +225,8 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
   else {
     state.revoke = true;
     if(state.retry == true) {
-      // retry sent, should be responeded by acquire
+      // retry received before,
+      // should be responeded by acquire instead
       ret = rlock_protocol::WAIT; 
     } else {
       switch(state.s) {
@@ -213,15 +236,15 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
           cltputs("FREE/RELEASING: modify it right away and send OK");
           if(lru) lru->dorelease(lid);
           state.revoke = false;
-          // state.retry = false;
+          state.retry = false;
           state.acquire_cnt = 0;
           state.thread_id = 0;
           state.s = NONE;
           ret = rlock_protocol::OK;
-          // trigger revoke handler
           break;
         case NONE:
-          cltputs("NONE: warning: a none lock being revoked. Will assume acquired and return WAIT");
+          cltputs("NONE: warning: a none lock being revoked. "
+            "Will assume acquired and return WAIT");
           ret = rlock_protocol::WAIT;
           break;
         case LOCKED:
@@ -252,9 +275,9 @@ lock_client_cache::retry_handler(lock_protocol::lockid_t lid,
   // set retry bit here
   // in case retry rpc arrive before cond variable wait started
   state.retry = true;
-  if(state.s != NONE) {
-    state.revoke = true;
+  if(state.s != NONE && state.s != ACQUIRING) {
     cltputs("warning: retry on an already cached lock, will assume previously revoked.");
+    state.revoke = true;
   }
   state.s = FREE;
   state.acquire_cnt = 0;
