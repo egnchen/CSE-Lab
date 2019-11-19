@@ -29,11 +29,42 @@ class extent_protocol {
   };
 
   struct attr {
+    uint32_t type = 0;
+    unsigned int atime = 0;
+    unsigned int mtime = 0;
+    unsigned int ctime = 0;
+    unsigned int size = 0;
+  };
+};
+
+class rextent_protocol {
+  public:
+  typedef int status;
+  typedef unsigned long long extentid_t;
+  enum xxstatus { 
+    OK = 0,
+    RPCERR, NOENT, IOERR };
+  enum rpc_numbers {
+    put = 0x6001,
+    get,
+    getattr,
+    remove,
+    create
+  };
+
+  enum types {
+    T_DIR = 1,
+    T_FILE,
+    T_SYMLINK
+  };
+
+  struct attr {
     uint32_t type;
     unsigned int atime;
     unsigned int mtime;
     unsigned int ctime;
     unsigned int size;
+    attr(): type(0), atime(0), mtime(0), ctime(0), size(0) {}
   };
 };
 

@@ -19,9 +19,15 @@
 // that they will be called when lock_client releases a lock.
 // You will not need to do anything with this class until Lab 6.
 class lock_release_user {
- public:
+public:
   virtual void dorelease(lock_protocol::lockid_t) = 0;
   virtual ~lock_release_user() {};
+};
+
+class lock_acquire_user {
+public:
+  virtual void doacquire(lock_protocol::lockid_t) = 0;
+  virtual ~lock_acquire_user() {};
 };
 
 class lock_client_cache : public lock_client {
@@ -58,15 +64,16 @@ struct lock_state {
 private:
   static std::map<lock_protocol::lockid_t, lock_state> lock_cache;
   static std::mutex global_lock;
-  class lock_release_user *lu;
+  lock_release_user *lru;
+  lock_acquire_user *lau;
   int rlock_port;
   std::string hostname;
   std::string id;
 
 public:
   static int last_port;
-  lock_client_cache(std::string xdst, class lock_release_user *l = 0);
-  virtual ~lock_client_cache() {};
+  lock_client_cache(std::string xdst, lock_acquire_user* _lau = nullptr, lock_release_user *_lru = nullptr);
+  virtual ~lock_client_cache() { delete lau; delete lru; }
   lock_protocol::status acquire(lock_protocol::lockid_t);
   lock_protocol::status release(lock_protocol::lockid_t);
   rlock_protocol::status revoke_handler(lock_protocol::lockid_t, 
