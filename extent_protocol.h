@@ -18,6 +18,7 @@ class extent_protocol {
     put = 0x6001,
     get,
     getattr,
+    getall,
     remove,
     create
   };
@@ -34,6 +35,11 @@ class extent_protocol {
     unsigned int mtime = 0;
     unsigned int ctime = 0;
     unsigned int size = 0;
+  };
+  
+  struct fullinfo {
+    extent_protocol::attr attr;
+    std::string buf;
   };
 };
 
@@ -87,6 +93,23 @@ operator<<(marshall &m, extent_protocol::attr a)
   m << a.mtime;
   m << a.ctime;
   m << a.size;
+  return m;
+}
+
+
+inline unmarshall &
+operator>>(unmarshall &u, extent_protocol::fullinfo &inf)
+{
+  u >> inf.attr;
+  u >> inf.buf;
+  return u;
+}
+
+inline marshall &
+operator<<(marshall &m, extent_protocol::fullinfo &inf)
+{
+  m << inf.attr;
+  m << inf.buf;
   return m;
 }
 

@@ -26,6 +26,7 @@ class extent_server {
   extent_protocol::status put     (extent_protocol::extentid_t id, const std::string buf, int &ret);
   extent_protocol::status get     (extent_protocol::extentid_t id, std::string &buf);
   extent_protocol::status getattr (extent_protocol::extentid_t id, extent_protocol::attr &attr);
+  extent_protocol::status getall  (extent_protocol::extentid_t id, extent_protocol::fullinfo &inf);
   extent_protocol::status remove  (extent_protocol::extentid_t id, int &ret);
 };
 
