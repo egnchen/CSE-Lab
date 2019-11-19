@@ -45,41 +45,37 @@ getattr(yfs_client::inum inum, struct stat &st)
     bzero(&st, sizeof(st));
 
     st.st_ino = inum;
-    printf("getattr %016llx %d\n", inum, yfs->isfile(inum));
-    if(yfs->isfile(inum)){
+    extent_protocol::attr attr;
+    assert(yfs->getattr(inum, attr) == 0);
+    if(attr.type == extent_protocol::T_FILE ||
+        attr.type == extent_protocol::T_SYMLINK) {
         yfs_client::fileinfo info;
-        ret = yfs->getfile(inum, info);
-        if(ret != yfs_client::OK)
-            return ret;
-        st.st_mode = S_IFREG | 0666;
+        ret = yfs->getfile(inum, info, attr);
+        if(attr.type == extent_protocol::T_FILE)
+            st.st_mode = S_IFREG | 0666;
+        else
+            st.st_mode = S_IFLNK | 0777;
         st.st_nlink = 1;
         st.st_atime = info.atime;
         st.st_mtime = info.mtime;
         st.st_ctime = info.ctime;
         st.st_size = info.size;
-        printf("\tgetattr -> %llu\n", info.size);
-    } else if(yfs->isdir(inum)) {
+        if(attr.type == extent_protocol::T_FILE)
+            printf("getattr -> (file)%llu\n", info.size);
+        else
+            printf("getattr -> (symlink)%lu\n", info.atime);
+    } else if(attr.type == extent_protocol::T_DIR) {
         yfs_client::dirinfo info;
-        ret = yfs->getdir(inum, info);
-        if(ret != yfs_client::OK)
-            return ret;
+        ret = yfs->getdir(inum, info, attr);
         st.st_mode = S_IFDIR | 0777;
         st.st_nlink = 2;
         st.st_atime = info.atime;
         st.st_mtime = info.mtime;
         st.st_ctime = info.ctime;
-        printf("\tgetattr -> %lu %lu %lu\n", info.atime, info.mtime, info.ctime);
+        printf("getattr -> (dir)%lu %lu %lu\n", info.atime, info.mtime, info.ctime);
     } else {
-        yfs_client::fileinfo info;
-        ret = yfs->getfile(inum, info);
-        if(ret != yfs_client::OK)
-            return ret;
-        st.st_mode = S_IFLNK | 0777;
-        st.st_nlink = 1;
-        st.st_atime = info.atime;
-        st.st_mtime = info.mtime;
-        st.st_ctime = info.ctime;
-        printf("\tgetattr -> (symlink)%lu\n", info.atime);
+        printf("getattr -> (error)%u\n", attr.type);
+        assert(0);
     }
     return yfs_client::OK;
 }
@@ -173,8 +169,7 @@ fuseserver_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 #if 1
     std::string buf;
     // Change the above "#if 0" to "#if 1", and your code goes here
-    int r;
-    if ((r = yfs->read(ino, size, off, buf)) == yfs_client::OK) {
+    if (yfs->read(ino, size, off, buf) == yfs_client::OK) {
         fuse_reply_buf(req, buf.data(), buf.size());    
     } else {
         fuse_reply_err(req, ENOENT);
@@ -364,17 +359,21 @@ fuseserver_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
     yfs_client::inum inum = ino; // req->in.h.nodeid;
     struct dirbuf b;
 
-    printf("fuseserver_readdir\n");
-
-    if(!yfs->isdir(inum)){
-        fuse_reply_err(req, ENOTDIR);
-        return;
-    }
+    // extent_protocol::attr attr;
+    // yfs->getattr(inum, attr);
+    // if(attr.type != extent_protocol::T_DIR) {
+    //     fuse_reply_err(req, ENOTDIR);
+    //     return;
+    // }
 
     memset(&b, 0, sizeof(b));
 
     std::list<yfs_client::dirent> entries;
-    yfs->readdir(inum, entries);
+    if(yfs->readdir(inum, entries) == extent_protocol::NOENT) {
+        // this is not a directory
+        fuse_reply_err(req, ENOTDIR);
+        return;
+    }
     for (std::list<yfs_client::dirent>::iterator it = entries.begin(); it != entries.end(); ++it) {
         dirbuf_add(&b, it->name.c_str(), (fuse_ino_t) it->inum);
     }

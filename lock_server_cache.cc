@@ -27,14 +27,14 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
   rpcc *clt = handle(id).safebind();
   cltputs("::acquire: trying to get lock");
   lock.m->lock();
-  cltputs("lock acquired, begin acquire");
   if(lock.holder == nullptr) {
     // no one is holding the lock
     cltputs("no one is holding lock or pending, give directly");
     lock.holder = clt;
   } else {
     if(lock.holder == clt) {
-      cltputs("warning: trying to acquire an already acquired lock.");
+      cltputs("warning: trying to acquire an already acquired lock, responding with RPCERR");
+      ret = lock_protocol::RPCERR;
     } else {
       bool is_empty = lock.waiting.empty();
       lock.waiting.push(clt);

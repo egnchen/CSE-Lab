@@ -239,7 +239,7 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
       buf += BLOCK_SIZE * NDIRECT;
     }
   }
-  inode->atime = time(nullptr);
+  // inode->atime = time(nullptr);
   put_inode(inum, inode);
   *size = inode->size;
   free(inode);

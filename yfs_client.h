@@ -43,7 +43,7 @@ class yfs_client {
  private:
   static std::string filename(inum);
   static inum n2i(std::string);
-
+  
   struct directory_entry {
     char dirname[FILENAME_LENGTH];
     yfs_client::inum inum;
@@ -54,19 +54,19 @@ class yfs_client {
     struct directory_entry entries[0]; // placeholder for directory entries
   };
 
-  void addsubfile(yfs_client::directory *dir, const std::string filename, const inum ino);
-  void removesubfile(yfs_client::directory *dir, const std::string filename);
+  void addSubFile(yfs_client::directory *dir, const std::string filename, const inum ino);
+  void removeSubFile(yfs_client::directory *dir, const std::string filename);
   int addFile(inum, const char*, extent_protocol::types, inum &);
   
  public:
   yfs_client(std::string, std::string);
 
-  bool isfile(inum);
+  int getattr(inum, extent_protocol::attr &);
   bool isdir(inum);
   bool issymlink(inum);
 
-  int getfile(inum, fileinfo &);
-  int getdir(inum, dirinfo &);
+  int getfile(inum, fileinfo &, extent_protocol::attr &);
+  int getdir(inum, dirinfo &, extent_protocol::attr &);
 
   int setattr(inum, size_t);
   int lookup(inum, const char *, bool &, inum &);
@@ -80,6 +80,28 @@ class yfs_client {
   /** you may need to add symbolic link related methods here.*/
   int ln(inum, const char* name, const char *link, inum &);
   int readlink(inum, std::string &);
+};
+
+class lock_acquire_handler: public lock_acquire_user {
+private:
+  extent_client *clt;
+public:
+  lock_acquire_handler(extent_client *clt): clt(clt) {}
+  void doacquire(lock_protocol::lockid_t lid);
+
+  ~lock_acquire_handler() {}
+};
+
+class lock_release_handler: public lock_release_user {
+private:
+  extent_client *clt;
+public:
+  lock_release_handler(extent_client *clt): clt(clt) {}
+
+  // declaration
+  void dorelease(lock_protocol::lockid_t lid);
+
+  ~lock_release_handler() {}
 };
 
 #endif 
