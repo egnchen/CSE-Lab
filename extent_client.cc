@@ -72,10 +72,11 @@ extent_protocol::status extent_client::get(
     // no cache yet, rpc & return one
     puts("\tcache not found, fetching attr & data...");
     InodeBuf &cache = cache_table[eid];
-    int ret = cl->call(extent_protocol::get, eid, cache.data_buf);
+    extent_protocol::fullinfo inf;
+    int ret = cl->call(extent_protocol::getall, eid, inf);
     assert(ret == extent_protocol::OK);
-    ret = cl->call(extent_protocol::getattr, eid, cache.attr);
-    assert(ret == extent_protocol::OK);
+    cache.attr = inf.attr;
+    cache.data_buf = inf.buf;
     cache.data_valid = true;
     buf = cache.data_buf;
   }
@@ -93,14 +94,17 @@ extent_protocol::status extent_client::getattr(
     puts("\tcache hit");
     attr = cache_ite->second.attr;
   } else {
-    puts("\tcache not found, fetching attr...");
+    puts("\tcache not found, fetching attr & data...");
     InodeBuf &cache = cache_table[eid];
+    extent_protocol::fullinfo inf;
     // call getattr
-    int ret = cl->call(extent_protocol::getattr, eid, cache.attr);
+    int ret = cl->call(extent_protocol::getall, eid, inf);
     assert(ret == extent_protocol::OK);
     // TODO add dirty bit here
+    cache.attr = inf.attr;
+    cache.data_buf = inf.buf;
     attr = cache.attr;
-    cache.data_valid = false;
+    cache.data_valid = true;
   }
   return extent_protocol::OK;
 }

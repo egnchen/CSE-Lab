@@ -63,6 +63,28 @@ int extent_server::getattr(extent_protocol::extentid_t id, extent_protocol::attr
   return extent_protocol::OK;
 }
 
+
+int extent_server::getall(extent_protocol::extentid_t id, extent_protocol::fullinfo &inf)
+{
+  tprintf("extent_server: get %lld\n", id);
+
+  id &= 0x7fffffff;
+  int size = 0;
+  char *cbuf = NULL;
+  im->read_file(id, &cbuf, &size);
+  if (size == 0)
+    inf.buf = "";
+  else {
+    inf.buf.assign(cbuf, size);
+    free(cbuf);
+  }
+
+  memset(&(inf.attr), 0, sizeof(inf.attr));
+  im->getattr(id, inf.attr);
+
+  return extent_protocol::OK;
+}
+
 int extent_server::remove(extent_protocol::extentid_t id, int &ret)
 {
   tprintf("extent_server: remove %lld\n", id);
